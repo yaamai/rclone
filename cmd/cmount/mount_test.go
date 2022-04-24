@@ -1,6 +1,5 @@
-//go:build cmount && cgo && (linux || darwin || freebsd || windows) && (!race || !windows)
+//go:build cmount && (linux || darwin || freebsd || windows) && (!race || !windows)
 // +build cmount
-// +build cgo
 // +build linux darwin freebsd windows
 // +build !race !windows
 

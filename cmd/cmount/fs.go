@@ -1,6 +1,5 @@
-//go:build cmount && cgo && (linux || darwin || freebsd || windows)
+//go:build cmount && (linux || darwin || freebsd || windows)
 // +build cmount
-// +build cgo
 // +build linux darwin freebsd windows
 
 package cmount
