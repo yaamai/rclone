@@ -106,6 +106,9 @@ func init() {
 			Help:     "Command to run to get a bearer token.",
 			Advanced: true,
 		}, {
+			Name: "cookie_token",
+			Help: "Cookie token instead of user/pass (e.g. a sharepoint with cookie)",
+                }, {
 			Name:     config.ConfigEncoding,
 			Help:     configEncodingHelp,
 			Advanced: true,
@@ -136,6 +139,7 @@ type Options struct {
 	Pass               string               `config:"pass"`
 	BearerToken        string               `config:"bearer_token"`
 	BearerTokenCommand string               `config:"bearer_token_command"`
+	CookieToken        string               `config:"cookie_token"`
 	Enc                encoder.MultiEncoder `config:"encoding"`
 	Headers            fs.CommaSepList      `config:"headers"`
 }
@@ -560,29 +564,35 @@ func (f *Fs) setQuirks(ctx context.Context, vendor string) error {
 		// To mount sharepoint, two Cookies are required
 		// They have to be set instead of BasicAuth
 		f.srv.RemoveHeader("Authorization") // We don't need this Header if using cookies
-		spCk := odrvcookie.New(f.opt.User, f.opt.Pass, f.endpointURL)
-		spCookies, err := spCk.Cookies(ctx)
-		if err != nil {
-			return err
-		}
-
-		odrvcookie.NewRenew(12*time.Hour, func() {
+		// if cookie manually specified
+		if f.opt.CookieToken != "" {
+			cookie := http.Cookie{Name: "SPOIDCRL", Value: f.opt.CookieToken}
+			f.srv.SetCookie(&cookie)
+		} else {
+			spCk := odrvcookie.New(f.opt.User, f.opt.Pass, f.endpointURL)
 			spCookies, err := spCk.Cookies(ctx)
 			if err != nil {
-				fs.Errorf("could not renew cookies: %s", err.Error())
-				return
+				return err
 			}
+
+			odrvcookie.NewRenew(12*time.Hour, func() {
+				spCookies, err := spCk.Cookies(ctx)
+				if err != nil {
+					fs.Errorf("could not renew cookies: %s", err.Error())
+					return
+				}
+				f.srv.SetCookie(&spCookies.FedAuth, &spCookies.RtFa)
+				fs.Debugf(spCookies, "successfully renewed sharepoint cookies")
+			})
+	
 			f.srv.SetCookie(&spCookies.FedAuth, &spCookies.RtFa)
-			fs.Debugf(spCookies, "successfully renewed sharepoint cookies")
-		})
-
-		f.srv.SetCookie(&spCookies.FedAuth, &spCookies.RtFa)
-
-		// sharepoint, unlike the other vendors, only lists files if the depth header is set to 0
-		// however, rclone defaults to 1 since it provides recursive directory listing
-		// to determine if we may have found a file, the request has to be resent
-		// with the depth set to 0
-		f.retryWithZeroDepth = true
+	
+			// sharepoint, unlike the other vendors, only lists files if the depth header is set to 0
+			// however, rclone defaults to 1 since it provides recursive directory listing
+			// to determine if we may have found a file, the request has to be resent
+			// with the depth set to 0
+			f.retryWithZeroDepth = true
+		}
 	case "sharepoint-ntlm":
 		// Sharepoint with NTLM authentication
 		// See comment above
